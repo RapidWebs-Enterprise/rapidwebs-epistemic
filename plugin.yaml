@@ -1,0 +1,22 @@
+name: rapidwebs-epistemic
+version: "0.1.0"
+description: |-
+  Epistemic Enhancement Layer for Hermes Agent.
+
+  Provides three core capabilities that no other Hermes plugin offers:
+  1. Epistemic Confidence Scoring — agents estimate their own certainty
+  2. Self-Model Persistence — agents learn from past mistakes across sessions
+  3. Epistemic Vigilance — continuous monitoring for hallucinations and logical errors
+
+  Based on 2025 research in agent self-awareness (INWARD, KnowSelf, MetaCrit).
+
+  Author: RapidWebs (Lucien)
+  License: MIT
+author: "RapidWebs Enterprise (Lucien)"
+license: "MIT"
+tags: ["epistemic", "confidence", "self-model", "vigilance", "hallucination", "rapidwebs"]
+hooks:
+  - pre_llm_call
+  - post_llm_call
+  - on_session_end
+  - on_session_start
