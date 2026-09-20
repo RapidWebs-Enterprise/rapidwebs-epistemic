@@ -421,3 +421,173 @@ class SelfModel:
 # ═════════════════════════════════════════════════════════════════════════════
 # COMPONENT 3: EPISTEMIC VIGILANCE
 # ═════════════════════════════════════════════════════════════════════════
+
+
+class EpistemicVigilance:
+    """Continuous monitoring for hallucinations and unverified claims."""
+
+    FACTUAL_MARKERS = [
+        "the", "is", "are", "was", "were", "has", "have", "had",
+        "according to", "studies show", "research indicates",
+        "the API endpoint", "the correct", "the answer is",
+    ]
+
+    OPINION_MARKERS = [
+        "i think", "i believe", "maybe", "possibly", "might",
+        "could be", "seems like", "i'm not sure",
+    ]
+
+    def __init__(self, honcho_client=None):
+        self.honcho = honcho_client
+        self._tool_results: list[dict] = []
+        self._session_context: str = ""
+
+    def set_tool_results(self, results: list[dict]) -> None:
+        """Update tool results for verification."""
+        self._tool_results = results[-50:]
+
+    def set_session_context(self, context: str) -> None:
+        """Update session context for verification."""
+        self._session_context = context[:5000]
+
+    def extract_claims(self, response: str) -> list[dict]:
+        """Extract verifiable claims from text."""
+        claims = []
+        sentences = re.split(r'[.!?]+', response)
+
+        for sent in sentences:
+            sent = sent.strip()
+            if len(sent) < 20:
+                continue
+
+            text_lower = sent.lower()
+            is_opinion = any(marker in text_lower for marker in self.OPINION_MARKERS)
+            is_factual = any(marker in text_lower for marker in self.FACTUAL_MARKERS)
+
+            if is_factual and not is_opinion:
+                claims.append({
+                    "text": sent[:200],
+                    "type": "factual",
+                    "confidence": 0.8,
+                })
+
+        return claims
+
+    async def verify_claim(self, claim: dict) -> dict:
+        """Check claim against available sources."""
+        result = {
+            "claim": claim["text"],
+            "status": "unverified",
+            "sources_checked": [],
+            "evidence": [],
+        }
+
+        if self.honcho:
+            try:
+                query = claim["text"][:100]
+                entities = await self.honcho.search_entities(q=query, limit=3)
+                if entities:
+                    result["sources_checked"].append("honcho_kg")
+                    for ent in entities[:2]:
+                        if ent.get("name") in claim["text"]:
+                            result["status"] = "verified"
+                            result["evidence"].append(f"Honcho: {ent.get('name')}")
+            except Exception as e:
+                logger.debug("Honcho verification failed: %s", e)
+
+        for tool_result in self._tool_results:
+            content = str(tool_result.get("result", ""))
+            if claim["text"][:50] in content or content[:50] in claim["text"]:
+                result["sources_checked"].append("tool_results")
+                result["status"] = "verified"
+                result["evidence"].append("Tool result match")
+                break
+
+        if self._session_context and claim["text"][:100] in self._session_context:
+            result["sources_checked"].append("session_context")
+            result["status"] = "verified"
+            result["evidence"].append("Session context match")
+
+        return result
+
+    def format_warning(self, unverified: list[dict]) -> Optional[str]:
+        """Format warning for unverified claims."""
+        if not unverified:
+            return None
+
+        lines = ["[EPISTEMIC VIGILANCE — Unverified Claims]"]
+        for item in unverified[:3]:
+            lines.append(f"  - {item['claim'][:100]}")
+            lines.append(f"    Status: {item['status']}")
+
+        return "\n".join(lines) + "\n"
+
+    async def check_response(self, response: str) -> Optional[str]:
+        """Main entry point: verify response and return warning if needed."""
+        claims = self.extract_claims(response)
+        if not claims:
+            return None
+
+        unverified = []
+        for claim in claims:
+            result = await self.verify_claim(claim)
+            if result["status"] == "unverified":
+                unverified.append(result)
+
+        if unverified:
+            return self.format_warning(unverified)
+
+        return None
+
+
+def register(ctx) -> None:
+    """Register rapidwebs-epistemic plugin hooks."""
+    logger.info("rapidwebs-epistemic v%s — registering hooks", version)
+
+    confidence = ConfidenceEstimator()
+    self_model = SelfModel()
+    vigilance = EpistemicVigilance()
+
+    ctx.register_hook("pre_llm_call", lambda ctx, **kw: _pre_llm_call(confidence, ctx, **kw))
+    ctx.register_hook("on_session_end", lambda ctx, **kw: _on_session_end(self_model, ctx, **kw))
+    ctx.register_hook("on_session_start", lambda ctx, **kw: _on_session_start(self_model, ctx, **kw))
+    ctx.register_hook("post_llm_call", lambda ctx, **kw: _post_llm_call(vigilance, ctx, **kw))
+
+    logger.info("rapidwebs-epistemic v%s — 4 hooks registered", version)
+
+
+async def _pre_llm_call(confidence: ConfidenceEstimator, ctx, **kwargs):
+    """Inject confidence context before LLM call."""
+    transcript = kwargs.get("transcript", [])
+    user_message = kwargs.get("user_message", "")
+    assistant_response = kwargs.get("assistant_response", "")
+
+    if not assistant_response:
+        return None
+
+    analysis = confidence.estimate(user_message, assistant_response, transcript)
+    return confidence.get_context_injection(analysis)
+
+
+async def _on_session_end(self_model: SelfModel, ctx, **kwargs):
+    """Update self-model at session end."""
+    transcript = kwargs.get("transcript", [])
+    session_id = kwargs.get("session_id", "unknown")
+
+    if transcript:
+        self_model.update_from_session(session_id, transcript)
+
+
+async def _on_session_start(self_model: SelfModel, ctx, **kwargs):
+    """Inject self-model context at session start."""
+    return self_model.get_context_injection()
+
+
+async def _post_llm_call(vigilance: EpistemicVigilance, ctx, **kwargs):
+    """Run vigilance checks after LLM response."""
+    response = kwargs.get("assistant_response", "")
+    if not response:
+        return None
+
+    warning = await vigilance.check_response(response)
+    return {"context": warning} if warning else None
