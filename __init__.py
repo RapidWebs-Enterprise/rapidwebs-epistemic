@@ -61,6 +61,11 @@ _VIGILANCE_ENABLED = True
 _CLAIM_EXTRACTION_ENABLED = True
 _SOURCE_VERIFICATION_ENABLED = True
 
+# Theory of Mind storage
+_TOM_TIER1_MAX_AGE_DAYS = 30  # Raw transcripts kept for 30 days
+_TOM_TIER2_MAX_AGE_DAYS = 90  # Session models kept for 90 days
+_TOM_TIER3_MAX_ENTRIES = 100  # Max goals/preferences in overall model
+
 # ── Initialize Storage ───────────────────────────────────────────────────────
 
 _EPISTEMIC_DIR = Path.home() / ".hermes" / "epistemic"
@@ -600,7 +605,8 @@ async def _on_session_start_tom(self_model: SelfModel, ctx, **kwargs):
     """Inject user mental state context at session start."""
     from src.user_model import Tier3Store, PredictionEngine
 
-    tier3 = Tier3Store(_EPISTEMIC_DIR)
+    user_id = kwargs.get("user_id", "default")
+    tier3 = Tier3Store(_EPISTEMIC_DIR, user_id=user_id)
     engine = PredictionEngine(tier3)
     return engine.get_context_injection()
 
@@ -622,9 +628,9 @@ async def _on_session_end_tom(ctx, **kwargs):
         return None
 
     try:
-        tier1 = Tier1Store(_EPISTEMIC_DIR)
-        tier2 = Tier2Store(_EPISTEMIC_DIR)
-        tier3 = Tier3Store(_EPISTEMIC_DIR)
+        tier1 = Tier1Store(_EPISTEMIC_DIR, user_id=user_id)
+        tier2 = Tier2Store(_EPISTEMIC_DIR, user_id=user_id)
+        tier3 = Tier3Store(_EPISTEMIC_DIR, user_id=user_id)
         extractor = ExtractionEngine()
 
         # Store raw transcript

@@ -96,9 +96,10 @@ class SessionModel:
 class Tier1Store:
     """Raw session transcript storage."""
 
-    def __init__(self, base_path: Path):
+    def __init__(self, base_path: Path, user_id: str = "default"):
         self.base_path = base_path
-        self.sessions_dir = base_path / "tier1" / "sessions"
+        self.user_id = user_id
+        self.sessions_dir = base_path / "tier1" / "sessions" / user_id
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
     def store_session(self, session_id: str, user_id: str, transcript: list[dict]) -> None:
@@ -113,10 +114,11 @@ class Tier1Store:
         with open(session_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    def get_recent_sessions(self, user_id: str, days: int = 7) -> list[dict]:
+    def get_recent_sessions(self, user_id: str = None, days: int = 7) -> list[dict]:
         """Get recent sessions for analysis."""
         sessions = []
         cutoff = datetime.now(timezone.utc).timestamp() - (days * 86400)
+        target_user = user_id or self.user_id
 
         for session_file in self.sessions_dir.glob("*.jsonl"):
             try:
@@ -124,7 +126,7 @@ class Tier1Store:
                     for line in f:
                         record = json.loads(line.strip())
                         record_ts = datetime.fromisoformat(record["timestamp"]).timestamp()
-                        if record_ts >= cutoff and record.get("user_id") == user_id:
+                        if record_ts >= cutoff and record.get("user_id") == target_user:
                             sessions.append(record)
             except (json.JSONDecodeError, OSError) as e:
                 logger.debug("Failed to read session file %s: %s", session_file, e)
@@ -160,9 +162,10 @@ class Tier1Store:
 class Tier2Store:
     """Per-session extracted models."""
 
-    def __init__(self, base_path: Path):
+    def __init__(self, base_path: Path, user_id: str = "default"):
         self.base_path = base_path
-        self.models_dir = base_path / "tier2" / "session_models"
+        self.user_id = user_id
+        self.models_dir = base_path / "tier2" / "session_models" / user_id
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
     def save_model(self, model: SessionModel) -> None:
@@ -179,8 +182,9 @@ class Tier2Store:
                 return SessionModel(**json.load(f))
         return None
 
-    def get_recent_models(self, user_id: str, count: int = 10) -> list[SessionModel]:
+    def get_recent_models(self, user_id: str = None, count: int = 10) -> list[SessionModel]:
         """Get recent session models."""
+        target_user = user_id or self.user_id
         models = []
         for model_file in sorted(
             self.models_dir.glob("*.json"),
@@ -190,7 +194,7 @@ class Tier2Store:
             try:
                 with open(model_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if data.get("user_id") == user_id:
+                    if data.get("user_id") == target_user:
                         models.append(SessionModel(**data))
             except (json.JSONDecodeError, OSError):
                 continue
@@ -200,9 +204,10 @@ class Tier2Store:
 class Tier3Store:
     """Cross-session aggregated model."""
 
-    def __init__(self, base_path: Path):
+    def __init__(self, base_path: Path, user_id: str = "default"):
         self.base_path = base_path
-        self.model_file = base_path / "tier3" / "overall_model.json"
+        self.user_id = user_id
+        self.model_file = base_path / "tier3" / "overall_model" / user_id / "model.json"
         self.model_file.parent.mkdir(parents=True, exist_ok=True)
 
     def load_model(self) -> UserMentalState:
