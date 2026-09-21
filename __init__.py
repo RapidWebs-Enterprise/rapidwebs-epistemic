@@ -591,3 +591,56 @@ async def _post_llm_call(vigilance: EpistemicVigilance, ctx, **kwargs):
 
     warning = await vigilance.check_response(response)
     return {"context": warning} if warning else None
+
+
+# ── Theory of Mind Hooks ─────────────────────────────────────────────────────
+
+
+async def _on_session_start_tom(self_model: SelfModel, ctx, **kwargs):
+    """Inject user mental state context at session start."""
+    from src.user_model import Tier3Store, PredictionEngine
+
+    tier3 = Tier3Store(_EPISTEMIC_DIR)
+    engine = PredictionEngine(tier3)
+    return engine.get_context_injection()
+
+
+async def _on_session_end_tom(ctx, **kwargs):
+    """Extract and store user mental state at session end."""
+    from src.user_model import (
+        Tier1Store,
+        Tier2Store,
+        Tier3Store,
+        ExtractionEngine,
+    )
+
+    transcript = kwargs.get("transcript", [])
+    session_id = kwargs.get("session_id", "unknown")
+    user_id = kwargs.get("user_id", "default")
+
+    if not transcript:
+        return None
+
+    try:
+        tier1 = Tier1Store(_EPISTEMIC_DIR)
+        tier2 = Tier2Store(_EPISTEMIC_DIR)
+        tier3 = Tier3Store(_EPISTEMIC_DIR)
+        extractor = ExtractionEngine()
+
+        # Store raw transcript
+        tier1.store_session(session_id, user_id, transcript)
+
+        # Extract session model
+        session_model = extractor.extract_from_transcript(transcript)
+        session_model.session_id = session_id
+        session_model.user_id = user_id
+        tier2.save_model(session_model)
+
+        # Aggregate to Tier 3
+        tier3.merge_session_model(session_model)
+
+        logger.info("ToM update complete: session=%s, user=%s", session_id, user_id)
+    except Exception as e:
+        logger.error("ToM session update failed: %s", e)
+
+    return None
