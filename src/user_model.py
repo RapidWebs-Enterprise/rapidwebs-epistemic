@@ -20,7 +20,7 @@ _TIER3_MAX_ENTRIES = 100
 
 # Emotional state markers
 FRUSTRATION_MARKERS = [
-    "frustrated", "annoyed", "angry", "fed up", "tired of", "this is hard",
+    "frustrated", "frustrating", "annoyed", "angry", "fed up", "tired of", "this is hard",
     "i give up", "this doesn't work", "wrong again"
 ]
 
