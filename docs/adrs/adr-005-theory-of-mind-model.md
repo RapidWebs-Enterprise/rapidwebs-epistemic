@@ -1,6 +1,6 @@
 ---
 title: "ADR-005: Theory of Mind Data Model"
-description: "Decision to use hierarchical three-tier model vs. flat structure"
+description: "Decision to use hierarchical three-tier model vs. flat structure for user mental state"
 category: architecture
 tags:
   - epistemic
@@ -10,8 +10,8 @@ tags:
 
 # ADR-005: Theory of Mind Data Model
 
-**Status**: Accepted  
-**Date**: 2026-09-20  
+**Status**: Proposed  
+**Date**: 2026-09-21  
 **Deciders**: Lucien (RapidWebs)  
 **Consulted**: Steven Page  
 **Informed**: Engineering team
@@ -67,7 +67,7 @@ We will implement **Option B: Three-Tier Hierarchical Model**.
 
 ## Implementation Notes
 
-- Directory: `~/.hermes/epistemic/user_models/<user_id>/`
+- Directory: `~/.hermes/epistemic/users/<user_id>/`
 - Tier 1: `sessions/` (JSONL transcripts)
 - Tier 2: `session_models/` (per-session analysis)
 - Tier 3: `overall_model.json` (aggregated)
